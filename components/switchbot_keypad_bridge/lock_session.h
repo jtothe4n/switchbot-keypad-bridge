@@ -40,17 +40,21 @@ class LockSession {
   };
 
   // (Re-)point the session at an imported PSA AES-CTR key. The bridge owns
-  // key generation, NVS persistence and PSA import (including the unpair
+  // key generation, NVS persistence and PSA import (including reset-pairing
   // rotation); the session only uses the handle.
   void set_aes_key(psa_key_id_t key) { this->aes_key_ = key; }
 
-  // Drop all per-connection state: IV, replay history. Called on connect,
-  // disconnect and unpair. The learned token slot survives — once adopted
-  // from an IV request it is a property of the paired keypad, not of one
-  // connection.
+  // Drop the crypto session state. Used when the shared key changes or the
+  // pairing is reset; ordinary BLE reconnects may continue the same SwitchBot
+  // session and must keep the IV alive.
   void reset();
 
-  // Forget the learned token slot as well (unpair only).
+  // Clear transient decoded-frame state while preserving the negotiated IV and
+  // replay window. Called on BLE connect/disconnect events because some
+  // keypads continue the same logical session after a transport reconnect.
+  void reset_transport();
+
+  // Forget the learned token slot as well (pairing reset only).
   void forget_slot() { this->slot_id_ = 0x00; }
 
   // Validate, decrypt and decode one received frame. On COMMAND the decoded
@@ -60,6 +64,8 @@ class LockSession {
   // Valid after process_frame() returned COMMAND.
   const FrameHeader &header() const { return this->header_; }
   const DecodedCommand &command() const { return this->command_; }
+  const uint8_t *plaintext() const { return this->plaintext_.data(); }
+  size_t plaintext_size() const { return this->plaintext_size_; }
 
   // The 20-byte session-IV response to notify after SEND_IV:
   // [0x01, 0x00, 0x00, 0x00, IV(16)]. The trailing 16 bytes double as the
@@ -87,16 +93,16 @@ class LockSession {
   psa_key_id_t aes_key_{PSA_KEY_ID_NULL};
 
   // Token-slot key_id the keypad uses post-pairing. Auto-learned from the
-  // IV-request frame the keypad sends as the first message of every session
-  // (Original/Touch=0x88, Vision/Vision Pro=0xC6, …). 0x00 = not yet seen;
-  // no encrypted frame is accepted until the IV handshake has set it.
+  // IV-request frame the keypad sends when it starts a logical session
+  // (Original/Touch=0x88, Vision/Vision Pro=0xC6, ...). 0x00 = not yet seen;
+  // no encrypted frame is accepted until an IV handshake has set it.
   uint8_t slot_id_{0x00};
 
   std::array<uint8_t, 20> iv_response_{0x01, 0x00, 0x00, 0x00};
   bool iv_established_{false};
 
-  // Per-session anti-replay state. Reset on connect, disconnect, and on
-  // every IV re-negotiation.
+  // Per-session anti-replay state. Reset when the crypto session is invalidated
+  // and on every IV re-negotiation.
   static constexpr size_t REPLAY_HISTORY_SIZE = 8;
   struct ReplayEntry {
     std::array<uint8_t, MAX_PAYLOAD> data{};
@@ -107,6 +113,8 @@ class LockSession {
 
   FrameHeader header_{};
   DecodedCommand command_{};
+  std::array<uint8_t, MAX_PAYLOAD> plaintext_{};
+  size_t plaintext_size_{0};
 };
 
 }  // namespace switchbot_keypad_bridge

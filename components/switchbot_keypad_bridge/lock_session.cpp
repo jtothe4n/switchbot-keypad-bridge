@@ -18,7 +18,8 @@ const char *const TAG = "switchbot_keypad_bridge.session";
 // Encrypted protocol framing.
 constexpr uint8_t PROTOCOL_MAGIC = 0x57;
 
-// Session IV negotiation: first frame received after connect.
+// Session IV negotiation. Most keypads send this after connect; some reconnect
+// and continue with the IV they already have.
 // Shape: 57 00 00 00 0F 21 03 <key_id>
 constexpr size_t SESSION_IV_REQ_MIN = 8;
 
@@ -29,7 +30,14 @@ constexpr size_t IV_RESPONSE_HEADER = 4;  // iv_response_ prefix before the IV b
 
 void LockSession::reset() {
   this->iv_established_ = false;
+  this->plaintext_size_ = 0;
   this->clear_replay_history_();
+}
+
+void LockSession::reset_transport() {
+  this->plaintext_size_ = 0;
+  this->header_ = FrameHeader{};
+  this->command_ = DecodedCommand{};
 }
 
 LockSession::Action LockSession::process_frame(const std::string &frame) {
@@ -67,11 +75,11 @@ LockSession::Action LockSession::process_frame(const std::string &frame) {
     return Action::NONE;
   }
 
-  // Refuse encrypted frames before the IV handshake completed in this session.
-  // A captured ciphertext from a previous connection would otherwise decrypt
-  // against the wrong (or stale) IV and ride on whatever lock state is set.
+  // Refuse encrypted frames before any IV has been negotiated for this key.
+  // BLE reconnects may preserve the logical session, but a fresh boot/reset
+  // must not decrypt against a zero or unrelated IV.
   if (!this->iv_established_) {
-    ESP_LOGW(TAG, "Dropping encrypted frame: no IV negotiated in this session");
+    ESP_LOGW(TAG, "Dropping encrypted frame: no IV negotiated");
     return Action::NONE;
   }
 
@@ -102,6 +110,8 @@ LockSession::Action LockSession::process_frame(const std::string &frame) {
   if (!this->xcrypt_(ciphertext, ct_len, plaintext)) {
     return Action::NONE;  // error already logged
   }
+  std::memcpy(this->plaintext_.data(), plaintext, ct_len);
+  this->plaintext_size_ = ct_len;
 
   ESP_LOGD(TAG, "RX %s", format_hex_pretty(plaintext, ct_len).c_str());
 
