@@ -317,6 +317,18 @@ void UnpairButton::press_action() {
   this->parent_->unpair();
 }
 
+void LockButton::press_action() {
+  ESP_LOGI(TAG, "LockButton pressed - setting lock state to LOCKED");
+  
+  if (!this->parent_) {
+    ESP_LOGE(TAG, "LockButton: parent is null!");
+    return;
+  }
+  
+  this->parent_->set_lock_state(true);
+  ESP_LOGI(TAG, "LockButton: lock state successfully set to LOCKED");
+}
+
 void SwitchbotKeypadBridge::dump_config() {
   ESP_LOGCONFIG(TAG, "SwitchBot Keypad Bridge:");
   ESP_LOGCONFIG(TAG, "  BLE address: %s", NimBLEDevice::getAddress().toString().c_str());

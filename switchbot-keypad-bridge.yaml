@@ -2,18 +2,16 @@ esphome:
   name: switchbot-keypad-bridge
 
 esp32:
-  board: seeed_xiao_esp32s3
+  board: esp32s3
   variant: esp32s3
   flash_size: 8MB
   framework:
     type: esp-idf
 
-psram:
-  mode: octal
-  speed: 80MHz
-
 external_components:
-  - source: github://pierluigizagaria/switchbot-keypad-bridge
+  - source:
+      type: local
+      path: components
     components: [switchbot_keypad_bridge]
 
 wifi:
@@ -48,6 +46,9 @@ switchbot_keypad_bridge:
 
   unpair_button:
     name: "Unpair"
+
+  lock_button:
+    name: "Lock"
 
   on_unlock:
     # method: "pin" | "fingerprint" | "nfc" | "face" | "unknown"   index: credential slot

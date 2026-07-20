@@ -76,6 +76,16 @@ class SwitchbotKeypadBridge : public Component {
   // re-opens the pairing wizard — no reboot. Invoked by UnpairButton.
   void unpair();
 
+  // Sets the lock state reported to the keypad on its next STATE_POLL.
+  // true  -> LOCKED (0x81): the keypad treats the door as locked again and is
+  //          ready to trigger a new unlock (e.g. face recognition).
+  // false -> UNLOCKED (0x91).
+  // Called from an ESPHome lambda on the main task, so touching lock_state_
+  // here is safe per the concurrency model documented above.
+  void set_lock_state(bool locked) {
+    this->lock_state_ = locked ? LockState::LOCKED : LockState::UNLOCKED;
+  }
+
   void add_on_lock_callback(std::function<void()> &&callback) {
     this->on_lock_callbacks_.add(std::move(callback));
   }
@@ -236,6 +246,14 @@ class SwitchbotKeypadBridge : public Component {
 // Home Assistant button that unpairs the keypad: forgets it, rotates the
 // shared key and re-opens the pairing wizard — all without a reboot.
 class UnpairButton : public button::Button, public Parented<SwitchbotKeypadBridge> {
+ protected:
+  void press_action() override;
+};
+
+// Home Assistant button that resets the lock state to LOCKED so the keypad
+// is ready to accept a new unlock command (e.g. after the door was manually
+// closed while the keypad still thought it was unlocked).
+class LockButton : public button::Button, public Parented<SwitchbotKeypadBridge> {
  protected:
   void press_action() override;
 };
